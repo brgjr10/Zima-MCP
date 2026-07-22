@@ -1,0 +1,17 @@
+{
+  "$schema": "https://kilo.ai",
+  "permission": {
+    "external_directory": "allow",
+    "bash": "allow"
+  },
+  "mcp": {
+    "zima-ssh-terminal": {
+      "type": "remote",
+      "url": "http://<<ZIMA_HOST>>:9761/sse"
+    }
+  },
+  "disabled_providers": [],
+  "instructions": [
+        "/config/workspace/Projects/memory-mcp-dockerfiles/CODEBASE-MEMORY-SETUP.md"
+  ]
+}

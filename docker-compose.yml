@@ -1,0 +1,33 @@
+x-casaos:
+  architectures:
+    - amd64
+    - arm64
+  main: zima-ssh-terminal
+  author: brgjr
+  category: Developer
+  description:
+    en_us: SSH terminal MCP server providing terminal access to ZimaOS via MCP tools and web UI
+  developer: brgjr
+  tagline:
+    en_us: SSH terminal access for AI agents and users
+  title:
+    en_us: Zima Terminal MCP
+  port_map: "9761"
+
+services:
+  zima-ssh-terminal:
+    image: brgjr10/zima-ssh-terminal:latest
+    container_name: zima-ssh-terminal
+    ports:
+      - "9761:9761"
+    environment:
+      - NODE_ENV=production
+      - SSH_TIMEOUT=30
+      - PORT=9761
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9761/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s

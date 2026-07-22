@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zima Terminal</title>
+  <link rel="stylesheet" href="/lib/xterm.css" />
+  <script src="/lib/xterm.min.js"></script>
+  <script src="/lib/xterm-addon-fit.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0d1117; color: #c9d1d9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; height: 100vh; display: flex; flex-direction: column; }
+    .header { padding: 12px 20px; background: #161b22; border-bottom: 1px solid #30363d; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+    .header h1 { font-size: 16px; font-weight: 600; color: #58a6ff; }
+    .header .status { font-size: 12px; color: #8b949e; margin-left: auto; }
+    .connect-form { display: flex; gap: 8px; align-items: center; }
+    .connect-form input { background: #0d1117; border: 1px solid #30363d; color: #c9d1d9; padding: 6px 10px; border-radius: 6px; font-size: 13px; min-width: 120px; }
+    .connect-form input:focus { outline: none; border-color: #58a6ff; }
+    .connect-form button { background: #238636; color: #fff; border: none; padding: 6px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: 500; }
+    .connect-form button:hover { background: #2ea043; }
+    .connect-form button:disabled { background: #30363d; cursor: not-allowed; }
+    .disconnect-btn { background: #da3633 !important; }
+    .disconnect-btn:hover { background: #f85149 !important; }
+    #terminal-container { flex: 1; padding: 12px; min-height: 0; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Zima Terminal</h1>
+    <div class="connect-form">
+      <input type="text" id="user-input" placeholder="user" value="root" />
+      <input type="text" id="shell-input" placeholder="shell" value="/bin/bash" style="min-width: 100px;" />
+      <button id="connect-btn">Connect</button>
+    </div>
+    <span class="status" id="status">Disconnected</span>
+  </div>
+  <div id="terminal-container"></div>
+
+  <script>
+    const API = window.location.origin;
+    let currentSessionId = null;
+    let term = null;
+    let fitAddon = null;
+    let pollInterval = null;
+    let lastOffset = 0;
+
+    const statusEl = document.getElementById("status");
+    const connectBtn = document.getElementById("connect-btn");
+    const userInput = document.getElementById("user-input");
+    const shellInput = document.getElementById("shell-input");
+
+    function initTerminal() {
+      if (term) return;
+      term = new Terminal({ cursorBlink: true, fontSize: 14, fontFamily: "'Fira Code', 'Cascadia Code', monospace", theme: { background: "#0d1117", foreground: "#c9d1d9", cursor: "#58a6ff" } });
+      fitAddon = new FitAddon.FitAddon();
+      term.loadAddon(fitAddon);
+      term.open(document.getElementById("terminal-container"));
+      fitAddon.fit();
+      term.focus();
+
+      term.onData((data) => {
+        if (!currentSessionId) return;
+        sendInput(data);
+      });
+
+      window.addEventListener("resize", () => fitAddon && fitAddon.fit());
+    }
+
+    async function connect() {
+      const user = userInput.value || "root";
+      const shell = shellInput.value || "/bin/bash";
+
+      initTerminal();
+      term.clear();
+      term.write("\\r\\x1b[90mOpening shell as " + user + "...\\x1b[0m\\r\\n");
+
+      try {
+        const res = await fetch(API + "/api/sessions", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user, shell }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Connection failed");
+
+        currentSessionId = data.sessionId;
+        statusEl.textContent = `Connected: ${user}`;
+        connectBtn.textContent = "Disconnect";
+        connectBtn.classList.add("disconnect-btn");
+        connectBtn.onclick = disconnect;
+
+        pollOutput();
+      } catch (err) {
+        term.write("\\r\\x1b[31mError: " + err.message + "\\x1b[0m\\r\\n");
+      }
+    }
+
+    async function pollOutput() {
+      if (!currentSessionId) return;
+      try {
+        const res = await fetch(API + "/api/sessions/" + currentSessionId + "/output?offset=" + lastOffset + "&limit=8192");
+        const data = await res.json();
+        if (data.output && data.output.length > 0) {
+          term.write(data.output);
+          lastOffset += data.length;
+        }
+      } catch (e) { /* ignore */ }
+      pollInterval = setTimeout(pollOutput, 100);
+    }
+
+    async function sendInput(data) {
+      if (!currentSessionId) return;
+      try {
+        await fetch(API + "/api/sessions/" + currentSessionId + "/input", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ input: data }),
+        });
+      } catch (e) { /* ignore */ }
+    }
+
+    async function disconnect() {
+      if (pollInterval) { clearTimeout(pollInterval); pollInterval = null; }
+      if (currentSessionId) {
+        try { await fetch(API + "/api/sessions/" + currentSessionId, { method: "DELETE" }); } catch (e) { /* ignore */ }
+        currentSessionId = null;
+      }
+      statusEl.textContent = "Disconnected";
+      connectBtn.textContent = "Connect";
+      connectBtn.classList.remove("disconnect-btn");
+      connectBtn.onclick = connect;
+      lastOffset = 0;
+      if (term) { term.write("\\r\\x1b[90mDisconnected.\\x1b[0m\\r\\n"); }
+    }
+
+    connectBtn.onclick = connect;
+
+    document.addEventListener("keydown", (e) => {
+      if (currentSessionId && term && e.target === document.body) {
+        term.focus();
+      }
+    });
+  </script>
+</body>
+</html>
