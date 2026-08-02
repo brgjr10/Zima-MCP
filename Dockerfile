@@ -11,7 +11,7 @@ COPY package*.json ./
 RUN npm ci
 
 COPY . .
-RUN npm run build
+RUN chmod +x node_modules/.bin/tsc && npm run build
 
 EXPOSE 9761
 
